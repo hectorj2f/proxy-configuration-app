@@ -1,0 +1,41 @@
+# -*- mode: ruby -*-
+# # vi: set ft=ruby :
+
+Vagrant.require_version ">= 1.8.0"
+
+$vm_memory = 1024
+$vm_cpus = 2
+
+
+# Use old vb_xxx config variables when set
+def vm_gui
+  $vb_gui.nil? ? $vm_gui : $vb_gui
+end
+
+def vm_memory
+  $vb_memory.nil? ? $vm_memory : $vb_memory
+end
+
+def vm_cpus
+  $vb_cpus.nil? ? $vm_cpus : $vb_cpus
+end
+
+Vagrant.configure("2") do |config|
+  # always use Vagrants insecure key
+#  config.ssh.insert_key = false
+
+  config.vm.box = "ubuntu/trusty64"
+
+  config.vm.network "private_network", ip: "192.168.4.195"
+
+  config.vm.define "cab-01" do |t|
+  end
+  config.vm.hostname = "cab-01"
+
+  config.vm.provision :ansible do |ansible|
+   ansible.playbook = "proxy.yml"
+   ansible.inventory_path = "hosts"
+   ansible.verbose = "v"
+   ansible.limit = "all"
+  end
+end

@@ -1,0 +1,87 @@
+#cloud-config
+
+---
+coreos:
+  etcd2:
+    advertise-client-urls: http://$public_ipv4:2379
+    initial-advertise-peer-urls: http://$private_ipv4:2380
+    listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
+    listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
+    discovery: https://discovery.etcd.io/653b64bac4c2f81189da2749d00d5ca5
+  fleet:
+    public-ip: "$public_ipv4"
+  flannel:
+    interface: "$public_ipv4"
+  units:
+  - name: update-engine.service
+    command: stop
+  - name: locksmithd.service
+    command: stop
+    mask: true
+  - name: systemd-modules-load.service
+    command: restart
+  - name: etcd2.service
+    command: start
+  - name: fleet.service
+    command: start
+  - name: docker.service
+    drop-ins:
+    - name: 40-docker.conf
+      content: |
+        [Unit]
+        Requires=flanneld.service
+        After=flanneld.service
+  - name: kill-mask-update-engine.service
+    command: start
+    enable: true
+    content: |
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/systemctl kill update-engine.service
+      ExecStartPost=/usr/bin/systemctl mask update-engine.service
+      ExecStartPost=/usr/bin/systemctl reset-failed update-engine.service
+  - name: flanneld.service
+    drop-ins:
+    - name: meetup-network-config.conf
+      content: |
+        [Service]
+        TimeoutStartSec=300s
+        Restart=on-failure
+        ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '{"Network": "12.1.0.0/16", "SubnetLen": 20, "SubnetMin": "12.1.10.0", "SubnetMax": "12.1.50.0", "Backend": {"Type": "vxlan", "Port": 7890}}'
+    command: start
+  - name: refinery-cms.service
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      After=docker.service
+
+      [Service]
+      TimeoutStartSec=300s
+      Restart=on-failure
+      Environment="NAME=%p"
+      Environment="IMAGE=hectorj2f/refinerycms"
+      ExecStartPre=/usr/bin/docker pull $IMAGE
+      ExecStartPre=-/usr/bin/docker stop -t 10 refinery-cms
+      ExecStartPre=-/usr/bin/docker rm -f refinery-cms
+      ExecStart=/usr/bin/docker run --rm --name=refinery-cmsE -p 3000:3000 $IMAGE
+      ExecStop=-/usr/bin/docker stop -t 10 refinery-cms
+      ExecStopPost=-/usr/bin/docker rm -f refinery-cms
+  - name: holamundo-sinatra.service
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      After=docker.service
+
+      [Service]
+      TimeoutStartSec=300s
+      Restart=on-failure
+      Environment="NAME=%p"
+      Environment="IMAGE=hectorj2f/dummy-sinatra"
+      ExecStartPre=/usr/bin/docker pull $IMAGE
+      ExecStartPre=-/usr/bin/docker stop -t 10 dummy-sinatra
+      ExecStartPre=-/usr/bin/docker rm -f dummy-sinatra
+      ExecStart=/usr/bin/docker run --rm --name=dummy-sinatra -p 3001:3000 -e MACHINE_IP=$public_ipv4 $IMAGE
+      ExecStop=-/usr/bin/docker stop -t 10 dummy-sinatra
+      ExecStopPost=-/usr/bin/docker rm -f dummy-sinatra

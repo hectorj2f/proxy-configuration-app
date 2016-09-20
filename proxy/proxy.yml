@@ -1,0 +1,79 @@
+---
+- name: Install caddy server
+  hosts: proxy
+  become: yes
+  become_user: root
+  vars:
+    mayu_version: 0.10.1
+    http_port: 9090
+    ssh_port: 22
+    caddyfile_path: /tmp/Caddyfile
+  tasks:
+    - name: Update cache
+      apt: update_cache=yes
+      become: yes
+      become_user: root
+
+    # docker
+    - name: Ensure docker package is installed (via apt)
+      apt:
+        name: "docker.io"
+    - name: Ensure docker service is running
+      service: name=docker state=started
+
+    - name: Install debootstrap to create an image from scratch
+      apt:  name={{ item }} state=installed
+      with_items:
+        - debootstrap
+        - cpio
+        - python-pip
+
+    - name: Install docker-py
+      pip: name=docker-py version=1.2.3
+
+    - name: Copy base Caddyfile
+      copy: src=./caddyserver/Caddyfile dest={{caddyfile_path}} mode=0755
+
+    - name: Creates directory
+      file: path=/home/vagrant/.caddy state=directory
+  #  - name: Copy Caddy folder
+  #    synchronize: src=./.caddy dest=/home/vagrant/.caddy recursive=yes archive=no
+
+    - sysctl: name="net.netfilter.nf_conntrack_max" value=50676 sysctl_set=yes state=absent sysctl_file=/etc/sysctl.conf
+    #- sysctl: name="net.netfilter.tcp_max_tw_buckets" value=1440000 sysctl_set=yes state=absent sysctl_file=/etc/sysctl.conf
+    - sysctl: name="net.nf_conntrack_max" value=50676 sysctl_set=yes state=absent reload=yes sysctl_file=/etc/sysctl.conf
+
+    - name: caddy
+      docker:
+        name: web
+        image: abiosoft/caddy
+        state: reloaded
+        pull: always
+        count: 1
+        env:
+          CADDYPATH: /home/caddy/.caddy
+        volumes:
+          - /tmp/Caddyfile:/etc/Caddyfile
+          - /home/vagrant/.caddy:/home/caddy/.caddy
+        ports:
+          - 2015:2015
+    - name: Copy SSL certificates of nginx
+      copy: src=./nginx/ssl/hector.mysite/ dest=/etc/ssl mode=0644
+    - name: Copy nginx.conf file
+      copy: src=./nginx/nginx.conf dest=/home/vagrant/ mode=0755
+    - name: nginx
+      docker:
+        name: proxy
+        image: nginx
+        state: reloaded
+        pull: always
+        count: 1
+        volumes:
+          - /etc/ssl:/etc/nginx/ssl
+          - /home/vagrant/nginx.conf:/etc/nginx/nginx.conf
+        ports:
+          - 80:80
+          - 443:443
+  handlers:
+    - name: Reload rsyslog
+      service: name=rsyslog state=reloaded
