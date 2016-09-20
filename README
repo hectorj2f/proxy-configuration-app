@@ -1,0 +1,157 @@
+Strict-Transport-Security
+
+
+# Code Challenge
+
+Initially, I started looking at different new proxies and decided to give a try
+to Caddy server. I included a configuration file in the `proxy` folder. A nice feature
+of Caddy is the auto TLS generation, which solves some problems. However, I decided
+to stop experimenting with Caddy for this challenge. Consequently, I chose Nginx
+due to performance reasons and based on the requirements. Nginx performs much
+better than Caddy based on the latest perf benchmarks. Nginx also includes
+functionalities for static caching that Caddy doesn't.
+
+Note that Nginx mainly suffers from cpu intensive jobs, so some of the selected
+values depend on the hardware characteristics of the test machine. If the hardware
+configuration changes those values should be adapted in an automized manner.
+
+## Nginx Proxy Configuration
+
+Our Nginx is running inside a Docker container which has no limitations in terms
+of resource usage. This Nginx redirects all the http traffic to https connection.
+So the port mappings are 80, 443 to the VM hosting its container.
+
+This setup provides the following Nginx configuration based on
+a potential production environment of a web site.
+
+```
+worker_processes  auto;
+worker_rlimit_nofile 8192;
+
+events {
+  worker_connections  1024; # ulimit -n
+  use epoll;
+  multi_accept on;
+}
+```
+
+I limited `worker_connections` based on the output from `ulimit -n`. This could
+be automatized by getting the value and passing it as an ENV variable to the docker
+container that runs Nginx. I also chose `worker_processes auto` to adapt the amount
+the workers to the available cores in the machine. I imagine that all the core
+of the machine would be available for Nginx in a production environment. `multi_accept`
+is enabled to optimize our workers to the maximum. `use epoll` is enabled to serve
+many clients with each thread.
+
+```
+keepalive_timeout 60;
+keepalive_requests 100000;
+tcp_nodelay off;
+tcp_push on;
+```
+
+`tcp_nodelay off` was disabled due to the nature of the website. I consider
+it won't require to stream video or another heavy transmission so there won't be any benefit
+from it.
+
+### Load balancing
+
+I decided to use lease connection (`least_conn`) as initial solution for load balancing. However,
+I'd rather use a dynamic weight based on one algo that dynamically analyzes the
+performance-workload of my workers and then determines its weight at runtime. I
+coded this part in an opensource project called ConPaaS [link](link ---).
+
+
+### Security
+
+I decided to use SSL + cyphers to secure the communication of Nginx.
+
+```
+client_header_timeout  2m;
+client_body_timeout    2m;
+send_timeout           2m;
+```
+
+To improve the performance, I chose some timeouts to avoid having steal connections
+on which nothing is happening. This way we could somehow limit DDoS actions over
+our website. Moreover, I choose slow timeouts based on some performance analysis.
+Therefore, I provision those certificates using Ansible and then mount them into the
+Nginx container.
+
+```
+ssl on;
+ssl_certificate         /etc/nginx/ssl/server.crt;
+ssl_certificate_key     /etc/nginx/ssl/server.key;
+```
+
+`server_tokens off` is another common property to disable in Nginx. It emits the
+nginx version in error messages and in the response header field. For security reason,
+it's better to disable to reduce the amount of information hackers could get.
+
+`reset_timedout_connection on` allows the server to close connection on non responding client.
+
+In this challenge, I used static certificates previously generated. But we could
+use another tools like Vault to gather those certificates and use them to secure
+the end-to-end communication.
+
+### Static caching
+
+To improve the serving of static files, I configured `sendfile on`. This will optimize
+files such as images, logos, and so forth.
+
+Nginx can cache files for a short period of time such as images,css,js and more.
+I added this to the configuration to cache 5000 files for 300 seconds, excluding
+any files that haven’t been accessed in 120 seconds, and only files that have 3 times or more.
+
+```
+open_file_cache max=5000 inactive=5min;
+open_file_cache_valid 2m;
+open_file_cache_min_uses 3;
+open_file_cache_errors off;
+
+proxy_cache_path /tmp/nginx levels=1:2 keys_zone=my_zone:10m inactive=60m;
+proxy_cache_key "$scheme$request_method$host$request_uri";
+
+gzip on;
+gzip_min_length  1000;
+gzip_types       application/x-javascript text/css application/javascript text/javascript text/plain text/xml application/json application/vnd.ms-fontobject application/x-font-opentype application/x-font-truetype application/x-font-ttf application/xml font/eot font/opentype font/otf image/svg+xml;
+gzip_disable "MSIE [1-6]\.";
+```
+
+Moreover, I enabled `gzip` compression to serve back the plain files compressed to the respective
+clients.
+
+
+## Workers
+
+I decided to bootstrap a CoreOS cluster with Ansible to deploy some test applications
+in those machines. These workers would allow you to test both proxy configurations
+and evaluate the performance. More specially, I remind you that I decided to go with
+my selected configuration for Nginx as final solution.
+
+I used CoreOS as operative system due to the following reasons:
+- Faster bootstraping than other Linux distros.
+- Implemented using systemd.
+- Auto-upgrade feature based on Omaha algorithm.
+- It's one of the OS that perfectly fits into this new microservices architectural
+  model.
+
+As test applications, I selected two applications:
+ -  A dummy sinatra application that just prints the IP of the machine to which the
+    proxy talks. This application was built as a Docker container and runs on port
+    3001 in each worker.
+
+ -  A known CMS application coded in Ruby and called `refinery-cms`.  This application
+    was built by myself as a Docker container and runs on port 3000 in each worker.
+
+
+## Test
+
+1) Go to the folder proxy and run `$ vagrant up --provider=virtualbox`. The provider
+might not be needed cause I have multiple in my machine.
+
+2) Once the machine has completed the provisioning operation. You have to add an
+entry in your file `/etc/hosts` and add the following entry `192.168.4.195 hector.mysite`.
+
+3) From your browser, type `http://hector.mysite` or `https://hector.mysite`.
+If you try to use the http you'll be redirect to https.

@@ -1,0 +1,16 @@
+hector.mysite
+
+browse
+
+#proxy / us-pro-host01.ext.cabify.com us-pro-host02.ext.cabify.com {
+proxy / 192.168.50.32:3001 192.168.50.33:3001 192.168.50.34:3001 {
+    policy least_conn
+    transparent
+}
+
+tls hectorj@gmail.com
+tls self_signed
+
+log stdout
+
+errors stdout
