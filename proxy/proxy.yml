@@ -43,7 +43,7 @@
       #    synchronize: src=./.caddy dest=/home/vagrant/.caddy recursive=yes archive=no
 
         - sysctl: name="net.netfilter.nf_conntrack_max" value=50676 sysctl_set=yes state=absent sysctl_file=/etc/sysctl.conf
-        #- sysctl: name="net.netfilter.tcp_max_tw_buckets" value=1440000 sysctl_set=yes state=absent sysctl_file=/etc/sysctl.conf
+      #  - sysctl: name="net.netfilter.tcp_max_tw_buckets" value=1440000 sysctl_set=yes state=absent sysctl_file=/etc/sysctl.conf
         - sysctl: name="net.nf_conntrack_max" value=50676 sysctl_set=yes state=absent reload=yes sysctl_file=/etc/sysctl.conf
 
         - name: caddy
@@ -76,6 +76,7 @@
               - /home/vagrant/nginx.conf:/etc/nginx/nginx.conf
             ports:
               - 80:80
+              - 9090:9090
               - 443:443
   handlers:
     - name: Reload rsyslog
