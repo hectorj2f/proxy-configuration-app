@@ -7,7 +7,6 @@ coreos:
     initial-advertise-peer-urls: http://$private_ipv4:2380
     listen-client-urls: http://0.0.0.0:2379,http://0.0.0.0:4001
     listen-peer-urls: http://$private_ipv4:2380,http://$private_ipv4:7001
-    discovery: https://discovery.etcd.io/e5ac3b559fa1e7ce75a66b9a641b8da2
   fleet:
     public-ip: "$public_ipv4"
   flannel:
@@ -49,6 +48,44 @@ coreos:
         Restart=on-failure
         ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '{"Network": "12.1.0.0/16", "SubnetLen": 20, "SubnetMin": "12.1.10.0", "SubnetMax": "12.1.50.0", "Backend": {"Type": "vxlan", "Port": 7890}}'
     command: start
+  - name: redis.service
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      Description=Redis Service
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=300s
+      Restart=on-failure
+      ExecStartPre=-/usr/bin/docker kill redis
+      ExecStartPre=-/usr/bin/docker rm redis
+      ExecStartPre=-/usr/bin/docker pull redis:latest
+      ExecStart=/usr/bin/docker run  --rm --name redis -p 6379:6379 redis:latest
+      ExecStop=/usr/bin/docker stop redis
+
+      [Install]
+      WantedBy=multi-user.target
+  - name: dummy-sinatra.service
+    command: start
+    enable: true
+    content: |
+      [Unit]
+      After=docker.service
+
+      [Service]
+      TimeoutStartSec=300s
+      Restart=on-failure
+      Environment="NAME=%p"
+      Environment="IMAGE=hectorj2f/dummy-sinatra:0.1"
+      ExecStartPre=/usr/bin/docker pull $IMAGE
+      ExecStartPre=-/usr/bin/docker stop -t 10 dummy-sinatra
+      ExecStartPre=-/usr/bin/docker rm -f dummy-sinatra
+      ExecStart=/usr/bin/docker run --rm --name=dummy-sinatra --link=redis:db -p 3001:3000 -e MACHINE_IP=$public_ipv4 $IMAGE
+      ExecStop=-/usr/bin/docker stop -t 10 dummy-sinatra
+      ExecStopPost=-/usr/bin/docker rm -f dummy-sinatra
   - name: refinery-cms.service
     command: start
     enable: true
@@ -67,21 +104,3 @@ coreos:
       ExecStart=/usr/bin/docker run --rm --name=refinery-cmsE -p 3000:3000 $IMAGE
       ExecStop=-/usr/bin/docker stop -t 10 refinery-cms
       ExecStopPost=-/usr/bin/docker rm -f refinery-cms
-  - name: holamundo-sinatra.service
-    command: start
-    enable: true
-    content: |
-      [Unit]
-      After=docker.service
-
-      [Service]
-      TimeoutStartSec=300s
-      Restart=on-failure
-      Environment="NAME=%p"
-      Environment="IMAGE=hectorj2f/dummy-sinatra"
-      ExecStartPre=/usr/bin/docker pull $IMAGE
-      ExecStartPre=-/usr/bin/docker stop -t 10 dummy-sinatra
-      ExecStartPre=-/usr/bin/docker rm -f dummy-sinatra
-      ExecStart=/usr/bin/docker run --rm --name=dummy-sinatra -p 3001:3000 -e MACHINE_IP=$public_ipv4 $IMAGE
-      ExecStop=-/usr/bin/docker stop -t 10 dummy-sinatra
-      ExecStopPost=-/usr/bin/docker rm -f dummy-sinatra
