@@ -1,4 +1,3 @@
-Strict-Transport-Security
 
 
 # Code Challenge
@@ -35,9 +34,10 @@ events {
 }
 ```
 
-I limited `worker_connections` based on the output from `ulimit -n`. This could
-be automatized by getting the value and passing it as an ENV variable to the docker
-container that runs Nginx. I also chose `worker_processes auto` to adapt the amount
+I limited `worker_connections` based on the output from `ulimit -n`, although you could
+also change to optimize the performance of your nginx. This value and others could
+be generated in an automatized way by getting the value and passing it as an
+ENV variable to the docker container that runs Nginx. I also chose `worker_processes auto` to adapt the amount
 the workers to the available cores in the machine. I imagine that all the core
 of the machine would be available for Nginx in a production environment. `multi_accept`
 is enabled to optimize our workers to the maximum. `use epoll` is enabled to serve
@@ -59,7 +59,7 @@ from it.
 I decided to use lease connection (`least_conn`) as initial solution for load balancing. However,
 I'd rather use a dynamic weight based on one algo that dynamically analyzes the
 performance-workload of my workers and then determines its weight at runtime. I
-coded this part in an opensource project called ConPaaS [link](link ---).
+coded this part in an opensource project called ConPaaS [link](https://github.com/hectorj2f/nginx_lb_weight_profiling).
 
 
 ### Security
@@ -124,7 +124,7 @@ clients.
 
 ## Workers
 
-I decided to bootstrap a CoreOS cluster with Ansible to deploy some test applications
+I decided to bootstrap a CoreOS cluster without Ansible to deploy some test applications
 in those machines. These workers would allow you to test both proxy configurations
 and evaluate the performance. More specially, I remind you that I decided to go with
 my selected configuration for Nginx as final solution.
@@ -137,8 +137,8 @@ I used CoreOS as operative system due to the following reasons:
   model.
 
 As test applications, I selected two applications:
- -  A dummy sinatra application that just prints the IP of the machine to which the
-    proxy talks. This application was built as a Docker container and runs on port
+ -  A dummy sinatra application that just prints the IP of the machine and a counter
+    of the visits. This application was built as a Docker container and runs on port
     3001 in each worker.
 
  -  A known CMS application coded in Ruby and called `refinery-cms`.  This application
